@@ -12,24 +12,41 @@ from flask import Response
 TOKEN_BOT = "5404069568:AAFgXr_me8VGucZbXxg3hoReigep8jG9JEg"
 
 app = Flask(__name__)
-sslify = SSLify(app)
 # run_with_ngrok(app)
 
 # --- COMMAND FUNCTION ---
+
+
 def start(nama):
     return "Assalamu'alaikum kak {}".format(nama)
 
+
+def help():
+    return '''
+    Untuk menggunakan bot ini, silahkan masukkan nomor surah dan nomor ayat yang dipisahkan dengan titik dua.\nContohnya seperti 78:8 untuk mencari Surah An-Naba ayat 78'''
+
+# ------------------------
+
+def save_chat_id(chat_id):
+    list_chat_id = []
+    filename = "/home/madhasoeki/bot/chat_id.txt"
+    # open file in write mode
+    with open(filename, 'r') as f:
+        for line in f:
+            x = line[:-1]
+            list_chat_id.append(x)
+    if chat_id not in list_chat_id:
+        list_chat_id.append(chat_id)
+        with open(filename, 'w') as f:
+            for item in list_chat_id:
+                f.write("%s\n" % item)
+
 def get_ayat(no_surat, ayat, surah):
     # If using local json file
-    # file_path = 'json/{}.json'.format(no_surat)
-    # with open(file_path, 'r', encoding="utf8") as j: 
-    #     data = json.loads(j.read())
-    #     the_ayat = data[ayat-1]
-
-    # If you're using api
-    url = 'https://al-quran-8d642.firebaseio.com/surat/{}.json?print=pretty'.format(no_surat)
-    data = requests.get(url).json()
-    the_ayat = data[ayat-1]
+    file_path = '/home/madhasoeki/bot/json/{}.json'.format(no_surat)
+    with open(file_path, 'r', encoding="utf8") as j:
+        data = json.loads(j.read())
+        the_ayat = data[ayat-1]
 
     reply = "{}\n{}\n(Q.S. {} : {})".format(the_ayat['ar'], the_ayat['id'], surah['nama'], ayat)
     return reply
@@ -39,22 +56,28 @@ def parse_message(message):
     chat_id = message['message']['chat']['id']
     text = message['message']['text']
 
+    # save chat id
+    save_chat_id(chat_id)
+    # check if if it is a command or not
     if text[0] == "/":
-        command = text[1:]
+        command = text[1:].lower()
         if command == "start":
             reply = start(nama)
+        elif command == "help":
+            reply = help()
         else:
             reply = "Maaf perintah tidak dikenali"
 
     elif ":" in text:
-        api = "https://al-quran-8d642.firebaseio.com/data.json?print=pretty"
         chat = text.split(':')
         # get surah number and ayat
         no_surah, ayat = chat[0], chat[1]
         if no_surah.isdigit() and ayat.isdigit():
             no_surah, ayat = int(chat[0]), int(chat[1])
             if no_surah > 0 and no_surah <= 114:
-                data = requests.get(api).json()
+                file_path = '/home/madhasoeki/bot/json/surah.json'
+                with open(file_path, 'r', encoding="utf8") as j:
+                    data = json.loads(j.read())
                 surah = data[no_surah-1]
                 jumlah_ayat = surah['ayat']
                 if ayat > 0 and ayat <= jumlah_ayat:
@@ -92,7 +115,7 @@ def index():
         send_message(chat_id, reply)
         return Response('ok', status=200)
     else:
-        return "<h1>Quran SIDAQ bot</h1>"
+        return "OK"
 
 if __name__ == '__main__':
     app.run()
