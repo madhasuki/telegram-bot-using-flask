@@ -4,12 +4,18 @@ import json
 import requests
 import random
 
-from flask import Flask, request, Response
+from flask import Flask, request, Response, render_template
 
-#TOKEN_BOT = your bot token
+# ngrok
+from flask_ngrok import run_with_ngrok
+from pyngrok import ngrok
+ngrok.set_auth_token("20ez4X4SJL9UNgg1z0nrXw4mH9y_7NEpNEkriLPcj4ggJf6vC")
+
+TOKEN_BOT = "5404069568:AAG3K_tHjk7YTUXePCd4wt-CFHkgCTcSKLk"
 DIR = os.getcwd()
 
 app = Flask(__name__)
+run_with_ngrok(app) #ngrok
 
 # --- COMMAND FUNCTION ---
 
@@ -33,8 +39,10 @@ def acak():
     data_ayat = data_surah["verses"][int(no_ayat)-1]
     arab = data_ayat["text"]["arab"]
     indo = data_ayat["translation"]["id"]
+    first = True if int(no_ayat) == 1 else False
+    last = True if int(no_ayat) == jumlah_ayat else False
 
-    return "{} \n{} \nQ.S {} [{}:{}]".format(arab, indo, nama_surah, no_surah, no_ayat)
+    return "{} \n{} \nQ.S {} [{}:{}]".format(arab, indo, nama_surah, no_surah, no_ayat), first, last
 
 
 def info():
@@ -176,16 +184,26 @@ def save_chat_id(chat_id):
             f.write(isi)
 
 
+def send_audio(chat_id, audio_file):
+    url = "https://api.telegram.org/bot{}/sendAudio".format(TOKEN_BOT)
+    payload = {
+        "chat_id":chat_id,
+        "audio" :audio_file
+    }
+    requests.post(url, json=payload)
+
+
 def send_no_button(chat_id, text):
     url = "https://api.telegram.org/bot{}/sendMessage".format(TOKEN_BOT)
     payload = {
         "chat_id":chat_id,
+        "parse_mode":"MarkdownV2",
         "text": text
     }
     requests.post(url, json=payload)
 
 
-def send_with_button(chat_id, text, first, last):
+def send_with_button(chat_id, text, first=False, last=False):
     url = "https://api.telegram.org/bot{}/sendMessage".format(TOKEN_BOT)
     if first:
         keyboard =  [[
@@ -199,6 +217,12 @@ def send_with_button(chat_id, text, first, last):
                             "text": "Tafsir Kemenag",
                             "callback_data": "tafsir"
                         }
+                    ],
+                    [
+                        {
+                            "text": "Unduh Audio",
+                            "callback_data": "audio"
+                        }
                     ]]
     elif last:
         keyboard =  [[
@@ -211,6 +235,12 @@ def send_with_button(chat_id, text, first, last):
                         {
                             "text": "Tafsir Kemenag",
                             "callback_data": "tafsir"
+                        }
+                    ],
+                    [
+                        {
+                            "text": "Unduh Audio",
+                            "callback_data": "audio"
                         }
                     ]]
     else:
@@ -228,6 +258,12 @@ def send_with_button(chat_id, text, first, last):
                         {
                             "text": "Tafsir Kemenag",
                             "callback_data": "tafsir"
+                        }
+                    ],
+                    [
+                        {
+                            "text": "Unduh Audio",
+                            "callback_data": "audio"
                         }
                     ]]
 
@@ -254,24 +290,34 @@ def callback_process(message, query_data):
         data_surah = data["data"]
         nama_surah = data_surah["name"]['transliteration']['id']
         data_ayat = data_surah["verses"][int(no_ayat)-1]
+        jumlah_ayat = data_surah["numberOfVerses"]
 
     if query_data == "tafsir":
         tafsir = data_ayat["tafsir"]["id"]["long"]
         reply = "{} \nQ.S {} [{}:{}]".format(tafsir, nama_surah, no_surah, no_ayat)
         send_no_button(chat_id, reply)
-    elif query_data == "before":
 
+    elif query_data == "before":
         data_ayat = data_surah["verses"][int(no_ayat)-2]
         arab = data_ayat["text"]["arab"]
         indo = data_ayat["translation"]["id"]
         text = "{}\n{}\nQ.S {} [{}:{}]".format(arab, indo, nama_surah, no_surah, (int(no_ayat)-1))
-        send_with_button(chat_id, text)
+        first = True if (int(no_ayat)-2) == 1 else False
+        last = True if (int(no_ayat)-2) == jumlah_ayat else False
+        send_with_button(chat_id, text, first, last)
+
     elif query_data == "after":
         data_ayat = data_surah["verses"][int(no_ayat)]
         arab = data_ayat["text"]["arab"]
         indo = data_ayat["translation"]["id"]
         text = "{}\n{}\nQ.S {} [{}:{}]".format(arab, indo, nama_surah, no_surah, (int(no_ayat)+1))
-        send_with_button(chat_id, text)
+        first = True if int(no_ayat) == 1 else False
+        last = True if int(no_ayat) == jumlah_ayat else False
+        send_with_button(chat_id, text, first, last)
+
+    elif query_data == "audio":
+        audio = data_ayat["audio"]["primary"]
+        send_audio(chat_id, audio)
 
 
 
@@ -300,8 +346,8 @@ def update_process(message):
             reply = info()
             send_no_button(chat_id, reply)
         elif command == "acak":
-            reply = acak()
-            send_with_button(chat_id, reply)
+            reply, first, last = acak()
+            send_with_button(chat_id, reply, first, last)
         else:
             reply = "Maaf perintah tidak dikenali"
             send_no_button(chat_id, reply)
@@ -356,6 +402,20 @@ def answer_callback(callback_id):
     requests.post(url, json=payload)
 
 
+@app.route('/kirim-pesan', methods=["POST", "GET"])
+def send_msg():
+    if request.method == "POST":
+        pesan = request.form.get("pesan")
+        f = open("bot/chat_id.txt", "r")
+        users = f.readlines()
+        for user in users:
+            user = user.replace('\n', '')
+            send_no_button(user, pesan)
+        return "Pesan terkirim"
+    else:
+        return render_template('send_message.html')
+
+
 @app.route('/', methods=["POST", "GET"])
 def index():
     if request.method == "POST":
@@ -374,7 +434,9 @@ def index():
         return Response('ok', status=200)
 
     else:
-        return "TELEGRAM BOT SEDANG BERJALAN"
+        f = open("bot/chat_id.txt", "r")
+        users = f.readlines()
+        return "{} orang menggunakan bot ini".format(len(users))
 
 if __name__ == "__main__":
     app.run()
